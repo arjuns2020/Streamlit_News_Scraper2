@@ -165,7 +165,7 @@ if st.sidebar.button("Search"):
 
         # Text vectorization using TF-IDF
         vectorizer = TfidfVectorizer(max_features=1000, stop_words=stop_words_list)
-        X = vectorizer.fit_transform(df1['text1'])
+        X = vectorizer.fit_transform(df1['text'])
 
         # Clustering using K-Means
         num_clusters = 5  # Adjust the number of clusters based on your dataset
