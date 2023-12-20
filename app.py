@@ -170,7 +170,10 @@ if st.sidebar.button("Search"):
         # Clustering using K-Means
         num_clusters = 5  # Adjust the number of clusters based on your dataset
         kmeans = KMeans(n_clusters=num_clusters, random_state=42)
-        df1['cluster'] = kmeans.fit_predict(X)
+        #changes 
+        df1.loc[:, 'cluster'] = kmeans.fit_predict(X)
+        #old
+        #df1['cluster'] = kmeans.fit_predict(X)
 
         # Extractive summarization for each cluster using sumy
         cluster_summaries = []
