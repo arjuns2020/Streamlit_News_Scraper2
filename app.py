@@ -222,7 +222,7 @@ if st.sidebar.button("Search"):
         # Download button for the clustering document
         st.sidebar.download_button(
             label="Download Cluster Summary",
-            data=doc_cluster_path,
+            data==open(doc_cluster_path, 'rb'),
             file_name='cluster_summary_document.docx',
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             key="cluster_summary_doc",
