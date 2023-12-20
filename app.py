@@ -161,7 +161,7 @@ if st.sidebar.button("Search"):
         df1['text'] = df1['text'].fillna('')
         df1 = df1[~df1['text'].str.contains("Save my User ID and Password")]
         df1 = df1.dropna(subset=['text'])
-        df1['text'] = df1['text'].apply(lambda x: ' '.join([word.lower() for word in word_tokenize(x) if word.isalpha() and word.lower() not in stop_words]))
+        df1['text1'] = df1['text'].apply(lambda x: ' '.join([word.lower() for word in word_tokenize(x) if word.isalpha() and word.lower() not in stop_words]))
 
         # Text vectorization using TF-IDF
         vectorizer = TfidfVectorizer(max_features=1000, stop_words=stop_words_list)
