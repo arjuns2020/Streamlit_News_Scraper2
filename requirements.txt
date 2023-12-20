@@ -71,9 +71,8 @@ scikit-learn==1.3.2
 scipy==1.11.4
 sumy==0.8.1
 
-spacy
-https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.7.3/en_core_web_trf-3.7.3.tar.gz
-
+spacy==3.5.0
+https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.5.0/en_core_web_sm-3.5.0-py3-none-any.whl
 selenium==4.16.0
 sentence-transformers==2.2.2
 sentencepiece==0.1.99
