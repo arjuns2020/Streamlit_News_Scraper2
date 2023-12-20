@@ -179,7 +179,7 @@ if st.sidebar.button("Search"):
             cluster_articles = df1[df1['cluster'] == i]
 
             if not cluster_articles.empty:
-                cluster_text = ' '.join(cluster_articles['text1'])
+                cluster_text = ' '.join(cluster_articles['text'])
 
                 # Using LSA (Latent Semantic Analysis) Summarizer
                 parser = PlaintextParser.from_string(cluster_text, Tokenizer("english"))
