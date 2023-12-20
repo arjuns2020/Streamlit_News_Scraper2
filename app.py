@@ -18,10 +18,6 @@ from nltk.tokenize import word_tokenize
 from docx import Document
 import nltk
 nltk.download('punkt')
-
-import spacy
-#spacy.download('en_core_web_sm')
-# Load the downloaded model
 import subprocess
 
 @st.cache_resource
@@ -29,7 +25,9 @@ def download_en_core_web_sm():
     subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"])
     
 nlp = spacy.load("en_core_web_sm")
-#nlp = spacy.load("en_core_web_lg")
+# Load spaCy model
+model_name = 'en_core_web_lg'
+nlp = spacy.load(model_name)
 
 # Function to check if the article is in English
 def is_english(text):
@@ -38,71 +36,29 @@ def is_english(text):
 
 # Function to get full article using newspaper3k and perform NLP
 def get_full_article_with_nlp(url):
-    article = GNews().get_full_article(url)
-
-    # Perform NLP on the article
-    try:
-        article.download()
-        article.parse()
-        article.nlp()
-    except Exception as e:
-        print(f"Error performing NLP on the article: {e}")
-
-    return {
-        'title': article.title,
-        'text': article.text,
-        'authors': article.authors,
-        'summary': article.summary,
-        'keywords': article.keywords,
-    }
+    # ... (same as before)
 
 # Function to process the article
 def process_article(article):
-    source = article.get('source', 'N/A')
-    if source == 'N/A':
-        # Check if the source is still not available and try to extract it from the URL
-        url = article.get('url', '')
-        if url:
-            source_from_url = url.split('/')[2]  # Extract domain from the URL
-            source = source_from_url if source_from_url else 'N/A'
+    # ... (same as before)
 
-    if is_english(article.get('title', '')):
-        title = article.get('title', 'N/A')
+# Sample data loading
+data = df
+stop_words_list = list(ENGLISH_STOP_WORDS)
+stop_words = list(ENGLISH_STOP_WORDS)
 
-        # Extract information after " ... - " or " - " in the title
-        if ' ... - ' in title:
-            title_parts = title.split(' ... - ')
-        elif ' - ' in title:
-            title_parts = title.split(' - ')
-        else:
-            title_parts = [title]
-
-        article_source = title_parts[1].strip() if len(title_parts) > 1 else 'N/A'
-
-        result = {
-            'Title': article.get('title', 'N/A'),
-            'Source': source,
-            'Article_Source': article_source,
-            'URL': article.get('url', 'N/A'),
-        }
-
-        try:
-            # Get the full article using newspaper3k and perform NLP
-            full_article = get_full_article_with_nlp(article.get('url'))
-            result.update(full_article)
-        except Exception as e:
-            print(f"Error processing article: {e}")
-
-        return result
-    else:
-        return None
+# Data preprocessing for clustering
+data['text'] = data['text'].fillna('')
+data = data[~data['text'].str.contains("Save my User ID and Password")]
+data = data.dropna(subset=['text'])
+data['text'] = data['text'].apply(lambda x: ' '.join([word.lower() for word in word_tokenize(x) if word.isalpha() and word.lower() not in stop_words]))
 
 # Streamlit UI
 st.title("News Scraper and Analyzer")
 st.sidebar.header("Search Parameters")
 
 # User input
-query = st.sidebar.text_input("Enter Keywords (separated by space)", 'aws cloud')
+query = st.sidebar.text_input("Enter Keywords (separated by space)", 'datacentre cloud')
 start_date = st.sidebar.date_input("Enter Start Date", datetime(2023, 11, 1))
 end_date = st.sidebar.date_input("Enter End Date", datetime(2023, 12, 30))
 
@@ -131,64 +87,60 @@ if st.sidebar.button("Search"):
         # Create a DataFrame from the list of results
         df = pd.DataFrame(results_list)
 
+        # Data processing for clustering
+        data['text'] = data['text'].fillna('')
+        data = data[~data['text'].str.contains("Save my User ID and Password")]
+        data = data.dropna(subset=['text'])
+        data['text'] = data['text'].apply(lambda x: ' '.join([word.lower() for word in word_tokenize(x) if word.isalpha() and word.lower() not in stop_words]))
+
         # Text vectorization using TF-IDF
-        vectorizer = TfidfVectorizer(max_features=1000, stop_words=ENGLISH_STOP_WORDS)
-        X = vectorizer.fit_transform(df['text'])
+        vectorizer = TfidfVectorizer(max_features=1000, stop_words=stop_words_list)
+        X = vectorizer.fit_transform(data['text'])
 
         # Clustering using K-Means
         num_clusters = 5  # You can adjust this number based on your dataset
         kmeans = KMeans(n_clusters=num_clusters, random_state=42)
         df['cluster'] = kmeans.fit_predict(X)
 
-        # Summarization for each cluster using the existing summarization logic
-        cluster_summaries = []
-        cluster_keywords = []
-        for i in range(num_clusters):
-            cluster_articles = df[df['cluster'] == i]
+        # Download button for the entire DataFrame
+        entire_df_output = BytesIO()
+        df.to_csv(entire_df_output, index=False)
+        st.sidebar.download_button(
+            label="Download Entire DataFrame",
+            data=entire_df_output.getvalue(),
+            file_name="entire_dataframe.csv",
+            mime="text/csv",
+            key="entire_dataframe",
+            help="Click to download the entire DataFrame"
+        )
 
-            if not cluster_articles.empty:
-                cluster_text = ' '.join(cluster_articles['text'])
-                parser = PlaintextParser.from_string(cluster_text, Tokenizer("english"))
-                summarizer = LsaSummarizer()
-                sentences_count = 3
-                cluster_summary = ' '.join(str(sentence) for sentence in summarizer(parser.document, sentences_count))
+# Display results
+st.subheader("Results")
+st.dataframe(df)
 
-                terms = vectorizer.get_feature_names_out()
-                cluster_tfidf_values = X[cluster_articles.index].toarray()
-                avg_tfidf_scores = cluster_tfidf_values.mean(axis=0)
-                top_keywords_idx = avg_tfidf_scores.argsort()[-5:][::-1]
-                cluster_top_keywords = [terms[idx] for idx in top_keywords_idx]
+# Display cluster summaries
+st.subheader("Cluster Summaries")
+for i, (summary, keywords) in enumerate(zip(cluster_summaries, cluster_keywords), 1):
+    st.write(f"\nCluster {i} Summary:")
+    st.write(f"Cluster Summary: {summary}")
+    st.write(f"Cluster Keywords: {', '.join(keywords)}")
 
-                cluster_summaries.append(cluster_summary)
-                cluster_keywords.append(cluster_top_keywords)
+# Download button for the cluster summaries
+summary_doc = Document()
+for i, (summary, keywords) in enumerate(zip(cluster_summaries, cluster_keywords), 1):
+    summary_doc.add_heading(f'Cluster {i} Summary', level=2)
+    summary_doc.add_paragraph(summary)
+    summary_doc.add_heading(f'Cluster {i} Keywords', level=2)
+    summary_doc.add_paragraph(', '.join(keywords))
 
-    # Display results
-    st.subheader("Results")
-    st.dataframe(df)
-
-    # Display cluster summaries
-    st.subheader("Articles Summaries")
-    for i, (summary, keywords) in enumerate(zip(cluster_summaries, cluster_keywords), 1):
-        st.write(f"\nCluster {i} Summary:")
-        st.write(f"Cluster Summary: {summary}")
-        st.write(f"Cluster Keywords: {', '.join(keywords)}")
-
-    # Download button for the cluster summaries
-    summary_doc = Document()
-    for i, (summary, keywords) in enumerate(zip(cluster_summaries, cluster_keywords), 1):
-        summary_doc.add_heading(f'Cluster {i} Summary', level=2)
-        summary_doc.add_paragraph(summary)
-        summary_doc.add_heading(f'Cluster {i} Keywords', level=2)
-        summary_doc.add_paragraph(', '.join(keywords))
-
-    # Save the document
-    output_summary = BytesIO()
-    summary_doc.save(output_summary)
-    st.sidebar.download_button(
-        label="Download Summaries",
-        data=output_summary.getvalue(),
-        file_name="cluster_summaries.docx",
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        key="cluster_summaries_doc",
-        help="Click to download the cluster summaries"
-    )
+# Save the document
+output_summary = BytesIO()
+summary_doc.save(output_summary)
+st.sidebar.download_button(
+    label="Download Cluster Summaries",
+    data=output_summary.getvalue(),
+    file_name="cluster_summaries.docx",
+    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    key="cluster_summaries_doc",
+    help="Click to download the cluster summaries"
+)
