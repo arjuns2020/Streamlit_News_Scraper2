@@ -20,7 +20,7 @@ import nltk
 nltk.download('punkt')
 
 import spacy
-spacy.download('en_core_web_sm')
+#spacy.download('en_core_web_sm')
 # Load the downloaded model
 nlp = spacy.load("en_core_web_sm")
 #nlp = spacy.load("en_core_web_lg")
