@@ -16,6 +16,7 @@ from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 import spacy
 from nltk.tokenize import word_tokenize
 from docx import Document
+import nltk
 nltk.download('punkt')
 # Load spaCy model
 
