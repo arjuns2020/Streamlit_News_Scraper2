@@ -219,10 +219,10 @@ if st.sidebar.button("Search"):
         doc_cluster_path = 'cluster_summary_document.docx'
         doc_cluster.save(doc_cluster_path)
 
-        # Download button for the clustering document
+         # Download button for the clustering document
         st.sidebar.download_button(
             label="Download Cluster Summary",
-            data==open(doc_cluster_path, 'rb'),
+            data=open(doc_cluster_path, 'rb'),
             file_name='cluster_summary_document.docx',
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             key="cluster_summary_doc",
