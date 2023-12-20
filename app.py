@@ -18,6 +18,7 @@ from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 from docx import Document
 from nltk.tokenize import word_tokenize
 import subprocess
+import spacy
 
 @st.cache_resource
 def download_en_core_web_sm():
