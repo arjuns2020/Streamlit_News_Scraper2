@@ -155,29 +155,31 @@ if st.sidebar.button("Search"):
         stop_words_list = list(ENGLISH_STOP_WORDS)
         stop_words = list(ENGLISH_STOP_WORDS)
 
+        # copy df to df1
+        df1=df
         # Data preprocessing for clustering
-        df['text'] = df['text'].fillna('')
-        df = df[~df['text'].str.contains("Save my User ID and Password")]
-        df = df.dropna(subset=['text'])
-        df['text'] = df['text'].apply(lambda x: ' '.join([word.lower() for word in word_tokenize(x) if word.isalpha() and word.lower() not in stop_words]))
+        df1['text'] = df1['text'].fillna('')
+        df1 = df1[~df1['text'].str.contains("Save my User ID and Password")]
+        df1 = df1.dropna(subset=['text'])
+        df1['text'] = df1['text'].apply(lambda x: ' '.join([word.lower() for word in word_tokenize(x) if word.isalpha() and word.lower() not in stop_words]))
 
         # Text vectorization using TF-IDF
         vectorizer = TfidfVectorizer(max_features=1000, stop_words=stop_words_list)
-        X = vectorizer.fit_transform(df['text'])
+        X = vectorizer.fit_transform(df1['text1'])
 
         # Clustering using K-Means
         num_clusters = 5  # Adjust the number of clusters based on your dataset
         kmeans = KMeans(n_clusters=num_clusters, random_state=42)
-        df['cluster'] = kmeans.fit_predict(X)
+        df1['cluster'] = kmeans.fit_predict(X)
 
         # Extractive summarization for each cluster using sumy
         cluster_summaries = []
         cluster_keywords = []
         for i in range(num_clusters):
-            cluster_articles = df[df['cluster'] == i]
+            cluster_articles = df1[df1['cluster'] == i]
 
             if not cluster_articles.empty:
-                cluster_text = ' '.join(cluster_articles['text'])
+                cluster_text = ' '.join(cluster_articles['text1'])
 
                 # Using LSA (Latent Semantic Analysis) Summarizer
                 parser = PlaintextParser.from_string(cluster_text, Tokenizer("english"))
