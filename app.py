@@ -16,7 +16,7 @@ from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 import spacy
 from nltk.tokenize import word_tokenize
 from docx import Document
-
+nltk.download('punkt')
 # Load spaCy model
 
 nlp = spacy.load("en_core_web_lg")
@@ -92,7 +92,7 @@ st.title("News Scraper and Analyzer")
 st.sidebar.header("Search Parameters")
 
 # User input
-query = st.sidebar.text_input("Enter Keywords (separated by space)", 'datacentre cloud')
+query = st.sidebar.text_input("Enter Keywords (separated by space)", 'aws cloud')
 start_date = st.sidebar.date_input("Enter Start Date", datetime(2023, 11, 1))
 end_date = st.sidebar.date_input("Enter End Date", datetime(2023, 12, 30))
 
