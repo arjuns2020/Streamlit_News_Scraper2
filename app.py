@@ -22,6 +22,12 @@ nltk.download('punkt')
 import spacy
 #spacy.download('en_core_web_sm')
 # Load the downloaded model
+import subprocess
+
+@st.cache_resource
+def download_en_core_web_sm():
+    subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"])
+    
 nlp = spacy.load("en_core_web_sm")
 #nlp = spacy.load("en_core_web_lg")
 
