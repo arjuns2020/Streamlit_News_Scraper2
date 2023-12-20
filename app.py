@@ -17,12 +17,12 @@ import spacy
 from nltk.tokenize import word_tokenize
 from docx import Document
 import nltk
-
-
 nltk.download('punkt')
-# Load spaCy model
-import en_core_web_sm
-nlp = en_core_web_sm.load()
+
+import spacy
+spacy.download('en_core_web_sm')
+# Load the downloaded model
+nlp = spacy.load("en_core_web_sm")
 #nlp = spacy.load("en_core_web_lg")
 
 # Function to check if the article is in English
