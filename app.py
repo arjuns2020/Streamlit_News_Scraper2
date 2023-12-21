@@ -7,18 +7,16 @@ from joblib import Parallel, delayed
 import streamlit as st
 import xlsxwriter
 from io import BytesIO
-import nltk
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
-from sumy.summarizers.text_rank import TextRankSummarizer
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 from docx import Document
-from nltk.tokenize import word_tokenize
-import subprocess
 import spacy
+from nltk.tokenize import word_tokenize
+#st.set_option('client.showWarningOnDirectSt.textWrites', False)
 
 @st.cache_resource
 def download_en_core_web_sm():
@@ -27,12 +25,37 @@ def download_en_core_web_sm():
 nlp = spacy.load("en_core_web_sm")
 nltk.download('punkt')
 
+
+class Session:
+    def __init__(self):
+        self.query = None
+        self.start_date = None
+        self.end_date = None
+        self.google_news = None
+        self.results_list = None
+        self.df = None
+        self.display_results = False  # Store display state within session state
+        
+
+# Initialize Streamlit session state
+if "results_list" not in st.session_state:
+    st.session_state.results_list = None
+
+if "df" not in st.session_state:
+    st.session_state.df = None
+
+if "display_results" not in st.session_state:
+    st.session_state.display_results = False
+
+
+
 # Function to check if the article is in English
 def is_english(text):
     lang, _ = classify(text)
     return lang == 'en'
 
 # Function to get full article using newspaper3k and perform NLP
+@st.cache_data()
 def get_full_article_with_nlp(url):
     article = GNews().get_full_article(url)
 
@@ -51,7 +74,8 @@ def get_full_article_with_nlp(url):
         'summary': article.summary,
         'keywords': article.keywords,
     }
-
+    
+@st.cache_data(persist=True)
 def process_article(article):
     source = article.get('source', 'N/A')
     if source == 'N/A':
@@ -92,142 +116,212 @@ def process_article(article):
     else:
         return None
 
-# Streamlit UI
-st.title("Keyword-driven News Aggregator.")
-st.sidebar.header("Search Parameters")
+# Your clustering function
+@st.cache_data(persist=True)
+def run_clustering(df):
+    # Sample data loading
+    data = df
+    stop_words_list = list(ENGLISH_STOP_WORDS)
+    stop_words = list(ENGLISH_STOP_WORDS)
 
-# User input
-query = st.sidebar.text_input("Enter Keywords (separated by space)", 'aws cloud')
-start_date = st.sidebar.date_input("Enter Start Date", datetime(2023, 11, 1))
-end_date = st.sidebar.date_input("Enter End Date", datetime(2023, 12, 30))
+    # Data preprocessing
+    df['text'] = df['text'].fillna('')
+    data = data[~data['text'].str.contains(" User ID and Password")]
+    data = data.dropna(subset=['text'])
+    data['text'] = data['text'].apply(
+        lambda x: ' '.join([word.lower() for word in word_tokenize(x) if word.isalpha() and word.lower() not in stop_words])
+    )
 
-# Set the language filter
-GNews.language = 'en'
+    # Text vectorization using TF-IDF
+    vectorizer = TfidfVectorizer(max_features=1000, stop_words=stop_words_list)
+    X = vectorizer.fit_transform(df['text'])
 
-# Initialize GNews object with query parameters
-google_news = GNews(country='US', max_results=100)
+    # Clustering using K-Means
+    num_clusters = 5
+    kmeans = KMeans(n_clusters=num_clusters, random_state=42)
+    df['cluster'] = kmeans.fit_predict(X)
 
-# Search button
-if st.sidebar.button("Search"):
-    with st.spinner("Please wait while scraping the web..."):
-        # Set the start and end dates based on UI input
-        google_news.start_date = start_date
-        google_news.end_date = end_date
+    # Extractive summarization for each cluster using sumy
+    cluster_summaries = []
+    cluster_keywords = []
 
-        # Get news results
-        news_results = google_news.get_news(query)
+    for i in range(num_clusters):
+        cluster_articles = df[df['cluster'] == i]
 
-        # Parallel processing using joblib
-        results_list = Parallel(n_jobs=-1)(delayed(process_article)(article) for article in news_results)
+        if not cluster_articles.empty:
+            cluster_text = ' '.join(cluster_articles['text'])
 
-        # Filter out None values (articles not in English)
-        results_list = [result for result in results_list if result is not None]
+            # Using LSA (Latent Semantic Analysis) Summarizer
+            parser = PlaintextParser.from_string(cluster_text, Tokenizer("english"))
+            summarizer = LsaSummarizer()
+            sentences_count = 3
+            cluster_summary = ' '.join(
+                str(sentence) for sentence in summarizer(parser.document, sentences_count)
+            )
 
-        # Create a DataFrame from the list of results
-        df = pd.DataFrame(results_list)
+            # Get keywords using TF-IDF
+            terms = vectorizer.get_feature_names_out()
 
-        # Download button
+            # Validate indices to avoid IndexError
+            valid_indices = [idx for idx in cluster_articles.index if idx < X.shape[0]]
+            cluster_tfidf_values = X[valid_indices].toarray()
+
+            avg_tfidf_scores = cluster_tfidf_values.mean(axis=0)
+            top_keywords_idx = avg_tfidf_scores.argsort()[-5:][::-1]
+            cluster_top_keywords = [terms[idx] for idx in top_keywords_idx]
+
+            # Append the summary and keywords for each cluster
+            cluster_summaries.append(cluster_summary)
+            cluster_keywords.append(cluster_top_keywords)
+
+    return cluster_summaries, cluster_keywords
+
+def main():
+    st.title("News Scraper, Analyzer, and Clusterer")
+    st.sidebar.header("Search Parameters")
+
+    # User input
+    query = st.sidebar.text_input("Enter Keywords (separated by space)", 'aws cloud')
+    start_date = st.sidebar.date_input("Enter Start Date", datetime(2023, 11, 1))
+    end_date = st.sidebar.date_input("Enter End Date", datetime(2023, 12, 30))
+
+    # Set the language filter
+    GNews.language = 'en'
+
+    # Initialize GNews object with query parameters
+    google_news = GNews(country='US', max_results=100)
+
+    # Search button
+    if st.sidebar.button("Search"):
+        with st.spinner("Please wait while scraping the web..."):
+            # Set the start and end dates based on UI input
+            google_news.start_date = start_date
+            google_news.end_date = end_date
+
+            # Get news results
+            news_results = google_news.get_news(query)
+
+            # Parallel processing using joblib
+            results_list = Parallel(n_jobs=-1)(delayed(process_article)(article) for article in news_results)
+
+            # Filter out None values (articles not in English)
+            results_list = [result for result in results_list if result is not None]
+
+            # Create a DataFrame from the list of results
+            df = pd.DataFrame(results_list)
+
+            # Filter out null values (articles not in English or with null title/text)
+            df = df.dropna(subset=['Title', 'text'])
+
+            # Display results
+            st.subheader("Results")
+            st.dataframe(df)
+
+            # Initialize cluster_summaries and cluster_keywords in case of an exception
+            cluster_summaries, cluster_keywords = [], []
+
+            # Call the clustering function
+            try:
+                cluster_summaries, cluster_keywords = run_clustering(df)
+            except Exception as e:
+                st.error(f"An error occurred during clustering: {str(e)}")
+
+            # Display cluster information
+            st.subheader("Cluster Information")
+
+            # Initialize an empty string to store cluster information
+            cluster_info = ""
+
+            # Iterate over clusters and concatenate information into a single string
+            for i, (summary, keywords) in enumerate(zip(cluster_summaries, cluster_keywords), 1):
+                cluster_info += f"Cluster {i} Summary: {summary}\n"
+                cluster_info += f"Cluster {i} Keywords: {', '.join(keywords)}\n\n"
+
+            # Display the concatenated information in a larger text area with scrolling
+            st.text_area("Cluster Information", value=cluster_info, height=500, key="cluster_info")
+
+            # Download button for cluster results
+            if st.button("Download Cluster Results"):
+                # Save the document
+                doc = Document()
+                for i, (summary, keywords) in enumerate(zip(cluster_summaries, cluster_keywords), 1):
+                    doc.add_heading(f'Cluster {i} Summary', level=2)
+                    doc.add_paragraph(summary)
+                    doc.add_heading(f'Cluster {i} Keywords', level=2)
+                    doc.add_paragraph(', '.join(keywords))
+
+                # Save the document
+                doc.save('cluster_summary.docx')
+
+            # Store results in session state
+            st.session_state.results_list = results_list
+            st.session_state.df = df
+            st.session_state.display_results = True
+
+    if st.sidebar.button("Refresh"):
+        # Clear the results and reset the UI
+        st.session_state.results_list = None
+        st.session_state.df = None
+        st.session_state.display_results = False
+        st.experimental_rerun()
+
+    # Display results only if the display flag is True
+    if st.session_state.display_results:
+        st.subheader("Results")
+        st.dataframe(st.session_state.df)
+
+    # Download buttons in the sidebar
+    if st.session_state.results_list:
+        # Download button for the filtered DataFrame
+        excel_file_path_filtered = (
+            f"{query.split()[0]}_{query.split()[1]}_filtered.xlsx"
+        )
+
         # Save the filtered DataFrame to an Excel file
-        excel_file_path_filtered = f"{query.split()[0]}_{query.split()[1]}_{start_date.strftime('%Y-%m-%d')}_{end_date.strftime('%Y-%m-%d')}_filtered.xlsx"
-        df.to_excel(excel_file_path_filtered, index=False, engine='openpyxl')
+        st.session_state.df.to_excel(excel_file_path_filtered, index=False, engine='openpyxl')
+
+        # Save the filtered DataFrame to the archive folder with the current date
+        archive_folder = os.path.join("archive", datetime.now().strftime("%Y-%m-%d"))
+        os.makedirs(archive_folder, exist_ok=True)
+        excel_file_path_archive = os.path.join(archive_folder, excel_file_path_filtered.split(os.path.sep)[-1])
+        st.session_state.df.to_excel(excel_file_path_archive, index=False, engine='openpyxl')
 
         # Create an in-memory Excel file for the filtered DataFrame
         output_filtered = BytesIO()
-        df.to_excel(output_filtered, index=False, engine='openpyxl')
+        st.session_state.df.to_excel(output_filtered, index=False, engine='openpyxl')
 
-        # Download button for the filtered DataFrame
+        # Download button for the filtered DataFrame in the sidebar
         st.sidebar.download_button(
             label="Download Filtered Results",
             data=output_filtered.getvalue(),
-            file_name=f"{query.split()[0]}_{query.split()[1]}_{start_date.strftime('%Y-%m-%d')}_{end_date.strftime('%Y-%m-%d')}_filtered.xlsx",
+            file_name=excel_file_path_filtered,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="filtered_excel",
-            help="Click to download the filtered results"
+            help="Click to download the filtered results",
         )
 
-        # Display results
-        st.subheader("Results")
-        st.subheader("Click Download Filtered Results near the search button to save results to Excel File")
-        st.dataframe(df)
-
-        # Sample data loading
-        data = results_list  # Use the scraped data directly
-        stop_words_list = list(ENGLISH_STOP_WORDS)
-        stop_words = list(ENGLISH_STOP_WORDS)
-
-        # copy df to df1
-        df1=df
-        # Data preprocessing for clustering
-        df1['text'] = df1['text'].fillna('')
-        df1 = df1[~df1['text'].str.contains("Save my User ID and Password")]
-        #df1 = df1.dropna(subset=['text'])
-        #df1['text1'] = df1['text'].apply(lambda x: ' '.join([word.lower() for word in word_tokenize(x) if word.isalpha() and word.lower() not in stop_words]))
-
-        # Text vectorization using TF-IDF
-        vectorizer = TfidfVectorizer(max_features=1000, stop_words=stop_words_list)
-        X = vectorizer.fit_transform(df1['text'])
-
-        # Clustering using K-Means
-        num_clusters = 5  # Adjust the number of clusters based on your dataset
-        kmeans = KMeans(n_clusters=num_clusters, random_state=42)
-        #changes 
-        df1.loc[:, 'cluster'] = kmeans.fit_predict(X)
-        #old
-        #df1['cluster'] = kmeans.fit_predict(X)
-
-        # Extractive summarization for each cluster using sumy
-        cluster_summaries = []
-        cluster_keywords = []
-        for i in range(num_clusters):
-            cluster_articles = df1[df1['cluster'] == i]
-
-            if not cluster_articles.empty:
-                cluster_text = ' '.join(cluster_articles['text'])
-
-                # Using LSA (Latent Semantic Analysis) Summarizer
-                parser = PlaintextParser.from_string(cluster_text, Tokenizer("english"))
-                summarizer = LsaSummarizer()
-
-                # Adjust the number of sentences based on your preference
-                sentences_count = 3
-                cluster_summary = ' '.join(str(sentence) for sentence in summarizer(parser.document, sentences_count))
-
-                # Get keywords using TF-IDF
-                terms = vectorizer.get_feature_names_out()
-                cluster_tfidf_values = X[cluster_articles.index].toarray()
-                avg_tfidf_scores = cluster_tfidf_values.mean(axis=0)
-                top_keywords_idx = avg_tfidf_scores.argsort()[-5:][::-1]  # Adjust the number of keywords to display
-                cluster_top_keywords = [terms[idx] for idx in top_keywords_idx]
-
-                cluster_summaries.append(cluster_summary)
-                cluster_keywords.append(cluster_top_keywords)
-
-                # Print cluster information
-                st.write(f"\nCluster {i} Summary:")
-                st.write(f"Number of Articles: {len(cluster_articles)}")
-                st.write(f"Cluster Summary: {cluster_summary}")
-                st.write(f"Cluster Keywords: {', '.join(cluster_top_keywords)}")
-
-        # Create a Word document and add content
-        doc_cluster = Document()
-
-        # Add cluster summaries and keywords to the document
+        # Save the document for clustering results
+        doc = Document()
         for i, (summary, keywords) in enumerate(zip(cluster_summaries, cluster_keywords), 1):
-            doc_cluster.add_heading(f'Cluster {i} Summary', level=2)
-            doc_cluster.add_paragraph(summary)
-            doc_cluster.add_heading(f'Cluster {i} Keywords', level=2)
-            doc_cluster.add_paragraph(', '.join(keywords))
+            doc.add_heading(f'Cluster {i} Summary', level=2)
+            doc.add_paragraph(summary)
+            doc.add_heading(f'Cluster {i} Keywords', level=2)
+            doc.add_paragraph(', '.join(keywords))
+            
+        # Save the document to a BytesIO object
+        output_doc = BytesIO()
+        doc.save(output_doc)
+        output_doc.seek(0)  # Move the cursor to the beginning of the BytesIO object
 
-        # Save the clustering document
-        doc_cluster_path = 'cluster_summary_document.docx'
-        doc_cluster.save(doc_cluster_path)
-
-         # Download button for the clustering document
+        # Download button for the cluster summary document in the sidebar
         st.sidebar.download_button(
             label="Download Cluster Summary",
-            data=open(doc_cluster_path, 'rb'),
-            file_name='cluster_summary_document.docx',
+            data=output_doc.getvalue(),
+            file_name=f"{query.split()[0]}_{query.split()[1]}_cluster_summary.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            key="cluster_summary_doc",
-            help="Click to download the cluster summary document"
+            key="cluster_summary_docx",
+            help="Click to download the cluster summary document",
         )
+
+if __name__ == "__main__":
+    main()
