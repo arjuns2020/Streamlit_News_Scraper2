@@ -16,6 +16,7 @@ from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 from docx import Document
 import spacy
 from nltk.tokenize import word_tokenize
+import nltk
 #st.set_option('client.showWarningOnDirectSt.textWrites', False)
 
 @st.cache_resource
